@@ -76,6 +76,20 @@ function mapsUrl(item) {
   );
 }
 
+// Yahoo!カーナビへの受け渡し（公式公開の URL スキーム）
+// 出典: Yahoo!マップ公式ブログ「Yahoo!カーナビの『URLスキーム』を公開！」
+//   https://map.yahoo.co.jp/blog/archives/20150202_carnavischeme.html
+//   Yahoo!カーナビ公式 note https://note.com/yahoo_carnavi/n/n1d6b819a816c
+// 書式 yjcarnavi://navi/select?lat=緯度&lon=経度&name=目的地名（世界測地系・度、名称は UTF-8 で URL エンコード）。
+// 現在地→目的地のルート選択画面が開く（案内開始はアプリ側で操作）。アプリ未インストールの端末では開かない。
+function yahooCarnaviUrl(item) {
+  return (
+    'yjcarnavi://navi/select?lat=' + encodeURIComponent(String(item.lat)) +
+    '&lon=' + encodeURIComponent(String(item.lon)) +
+    '&name=' + encodeURIComponent(item.name)
+  );
+}
+
 function osmUrl(item) {
   const type = { n: 'node', w: 'way', r: 'relation' }[item.osm[0]];
   return `https://www.openstreetmap.org/${type}/${item.osm.slice(1)}`;
@@ -105,8 +119,18 @@ function popupNode(item) {
   go.href = mapsUrl(item);
   go.target = '_blank';
   go.rel = 'noopener';
-  go.textContent = 'ここへ行く（Googleマップで車の経路案内）';
+  go.textContent = 'Googleマップで案内（車）';
   wrap.appendChild(go);
+  // カスタムスキームは新しいタブにせず、そのまま開く（空のタブが残らないように）
+  const yahoo = document.createElement('a');
+  yahoo.className = 'popup-go popup-yahoo';
+  yahoo.href = yahooCarnaviUrl(item);
+  yahoo.textContent = 'Yahoo!カーナビで案内';
+  wrap.appendChild(yahoo);
+  const yNote = document.createElement('p');
+  yNote.className = 'note';
+  yNote.textContent = 'Yahoo!カーナビはアプリが入ったスマホでのみ開きます（ルート選択画面が開きます）。';
+  wrap.appendChild(yNote);
   const edit = document.createElement('a');
   edit.className = 'osm-edit';
   edit.href = osmUrl(item);
