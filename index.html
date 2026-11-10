@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b3a42">
+  <title>タイムズ駐車場マップ（非公式）</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header>
+    <h1>タイムズ駐車場マップ（非公式）</h1>
+    <p class="disclaimer" id="disclaimer">本アプリは個人が作成した非公式のもので、パーク24株式会社・タイムズとは一切関係ありません。「タイムズ」「パーク24」はパーク24株式会社の登録商標であり、本アプリでは駐車場の場所を指し示すためにのみ名称を使用しています（ロゴは使用していません）。データは OpenStreetMap（© OpenStreetMap contributors、ODbL）の有志による編集に基づきます。正確性・最新性は保証しません（閉鎖・移転・名称変更が反映されていない場合があります）。空き状況・料金は表示していません。ご利用前に公式サイトまたは現地で必ずご確認ください。正確な情報・満空情報は公式アプリ「タイムズの駐車場検索」をご利用ください。誤りに気づいた場合は OpenStreetMap 本体へ修正いただけると助かります。</p>
+    <div class="toolbar">
+      <button id="locate" type="button">現在地</button>
+      <button id="nearest" type="button">最寄り</button>
+    </div>
+    <p id="status" role="status">データを読み込んでいます…</p>
+    <p id="dataInfo"></p>
+    <p id="geoStatus" role="status" hidden></p>
+  </header>
+
+  <main>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div id="empty" hidden>この付近に登録地点がありません（OpenStreetMap に未登録の駐車場は表示されません）</div>
+    </div>
+    <section id="list">
+      <h2 id="listTitle">近くの駐車場</h2>
+      <ul id="items"></ul>
+    </section>
+    <section id="about">
+      <h2>データとライセンス</h2>
+      <p>地図とデータ: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors。地点データは OpenStreetMap から抽出した派生データベースで、<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">Open Database License (ODbL) 1.0</a> で提供しています（<a href="./data/times-jp.json">データ JSON</a>）。</p>
+      <p id="aboutData"></p>
+      <p>抽出条件: OpenStreetMap の amenity=parking のうち、name／operator／brand に「タイムズ」「Times」「パーク24」を含むもの（他社名の部分一致は除外）。</p>
+    </section>
+  </main>
+
+  <script src="./vendor/leaflet/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
