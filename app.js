@@ -310,6 +310,107 @@ function centerOn(pos) {
   map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), LOCATED_ZOOM));
 }
 
+// ---------- 利用者の手動操作中・操作後5秒は追従を止める ----------
+// 「利用者の操作」とするのは、利用者の入力から直接届くイベントだけ（アプリ側の setView では発生しない）:
+//   ドラッグ: Leaflet の dragstart / dragend（Draggable が指・マウスの移動でだけ出す）
+//   ピンチ: 地図上の touchstart（指2本以上）〜 指が1本以下になった touchend / touchcancel
+//   ホイール・ダブルクリック（ダブルタップ）・＋－ボタン・キーボードの拡大縮小／移動: その入力1回ごと
+// 指やボタンを押している間は止めたまま。タイマーの起点は「手を離した時点」（dragend・ピンチ終了・入力1回）で、
+// そこから5秒たったら追従を再開して現在地を中心に戻す。「最寄り」後の10秒停止（followPausedUntil）とは別に持つ。
+const USER_FOLLOW_PAUSE_MS = 5000;
+const userGestures = new Set(); // いま押している操作（'drag' / 'pinch'）
+let userPausedUntil = 0;
+let userResumeTimer = null;
+
+function userPaused() {
+  return userGestures.size > 0 || Date.now() < userPausedUntil;
+}
+
+function followBlocked() {
+  return followPaused() || userPaused();
+}
+
+function userGestureStart(kind) {
+  userGestures.add(kind);
+  clearTimeout(userResumeTimer);
+  userResumeTimer = null;
+  logGeo('user-gesture-start', { kind });
+}
+
+function userGestureEnd(kind) {
+  if (!userGestures.delete(kind) && kind !== 'instant') return;
+  if (userGestures.size > 0) return; // まだ別の指・操作が続いている
+  userPausedUntil = Date.now() + USER_FOLLOW_PAUSE_MS; // 手を離した時点から5秒
+  clearTimeout(userResumeTimer);
+  userResumeTimer = setTimeout(resumeAfterUserGesture, USER_FOLLOW_PAUSE_MS);
+  logGeo('user-follow-paused', { kind, ms: USER_FOLLOW_PAUSE_MS });
+}
+
+// 押して離す区別がない入力（ホイール1刻み・ダブルクリック・＋－ボタン・キー）は、その入力の時点を「手を離した時点」とする
+function userInstantInput(kind) {
+  if (userGestures.size > 0) return; // ドラッグ・ピンチ中なら、その終了時に5秒を数え始める
+  logGeo('user-gesture-start', { kind });
+  userGestureEnd('instant');
+}
+
+function resumeAfterUserGesture() {
+  userResumeTimer = null;
+  if (userPaused()) return;
+  if (followPaused()) return; // 「最寄り」後の10秒停止中なら、そちらの再開（次の測位）に任せる
+  logGeo('follow-resumed', { by: 'user-timeout' });
+  if (state.pos) centerOn(state.pos);
+}
+
+function cancelUserPause() {
+  userGestures.clear();
+  userPausedUntil = 0;
+  clearTimeout(userResumeTimer);
+  userResumeTimer = null;
+}
+
+map.on('dragstart', () => userGestureStart('drag'));
+map.on('dragend', () => userGestureEnd('drag'));
+// 保険: 何かの理由で dragend が届かなくても、指・マウスを離した時点でドラッグ終了とする（止まったままにしない）
+function releaseDrag(e) {
+  if (!userGestures.has('drag')) return;
+  if (e.touches && e.touches.length > 0) return; // まだ指が残っている
+  userGestureEnd('drag');
+}
+['mouseup', 'pointerup', 'pointercancel', 'touchend', 'touchcancel'].forEach((type) => {
+  document.addEventListener(type, releaseDrag, { capture: true, passive: true });
+});
+window.addEventListener('blur', releaseDrag);
+map.on('dblclick', () => userInstantInput('dblclick-zoom'));
+map.on('boxzoomend', () => userInstantInput('box-zoom'));
+map.on('keydown', (e) => {
+  const key = e.originalEvent && e.originalEvent.key;
+  if (['+', '-', '=', '_', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) userInstantInput('keyboard');
+});
+{
+  const box = map.getContainer();
+  let pinching = false;
+  box.addEventListener('touchstart', (e) => {
+    if (e.touches.length >= 2 && !pinching) {
+      pinching = true;
+      userGestureStart('pinch');
+    }
+  }, { passive: true });
+  const pinchEnd = (e) => {
+    if (pinching && e.touches.length < 2) {
+      pinching = false;
+      userGestureEnd('pinch');
+    }
+  };
+  box.addEventListener('touchend', pinchEnd, { passive: true });
+  box.addEventListener('touchcancel', pinchEnd, { passive: true });
+  // ポップアップ内のホイールは Leaflet が伝播を止めるため、地図のホイール拡大縮小だけが届く
+  box.addEventListener('wheel', () => userInstantInput('wheel'), { passive: true });
+  // ＋－ボタンは Leaflet がボタン自身でクリックの伝播を止めるため、ボタンに直接付ける
+  box.querySelectorAll('.leaflet-control-zoom a').forEach((btn) => {
+    btn.addEventListener('click', () => userInstantInput('zoom-button'));
+  });
+}
+
 function onPosition(position, source) {
   const pos = { lat: position.coords.latitude, lon: position.coords.longitude };
   const first = state.pos == null;
@@ -319,7 +420,7 @@ function onPosition(position, source) {
   if (first) logGeo('ok', { source, accuracy: Math.round(position.coords.accuracy) });
   if (!userMarker) userMarker = L.marker([pos.lat, pos.lon], { title: '現在地' }).addTo(map);
   else userMarker.setLatLng([pos.lat, pos.lon]);
-  if (!followPaused()) centerOn(pos); // 追従（「最寄り」直後の一時停止中は除く）
+  if (!followBlocked()) centerOn(pos); // 追従（「最寄り」直後の10秒と、手動操作中・操作後5秒は除く）
   if (first) setGeoStatus('');
   render();
 }
@@ -364,6 +465,7 @@ el.locate.addEventListener('click', () => {
     return;
   }
   followPausedUntil = 0;
+  cancelUserPause(); // 手動操作後の5秒停止中でも、「現在地」を押したらすぐ戻す
   logGeo('follow-resumed', { by: 'locate-button' });
   if (state.pos) centerOn(state.pos);
   setGeoStatus('現在地を取得しています…');
@@ -473,4 +575,4 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-window.__tm = { dataReady, state, map, geoLog, startGeolocation, followPaused, mapsUrl, markers }; // 動作確認用
+window.__tm = { dataReady, state, map, geoLog, startGeolocation, followPaused, userPaused, mapsUrl, markers }; // 動作確認用
